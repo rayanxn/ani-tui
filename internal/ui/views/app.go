@@ -39,6 +39,7 @@ type AppModel struct {
 	config         config.Config
 	anilistClient  *anilist.Client
 	searchModel    SearchModel
+	detailModel    DetailModel
 	err            error
 }
 
@@ -86,8 +87,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NavigateToDetailMsg:
 		m = m.pushView(ViewDetail)
-		// DetailModel will be initialized in Phase 2 detail view
-		return m, nil
+		m.detailModel = NewDetailModel(m.anilistClient, msg.AnimeID)
+		return m, m.detailModel.Init()
 
 	case NavigateBackMsg:
 		return m.navigateBack()
@@ -117,8 +118,8 @@ func (m AppModel) View() string {
 		content = m.searchModel.View(m.width, contentHeight)
 		status = "Search anime  |  / search  |  ? help  |  q quit"
 	case ViewDetail:
-		content = "Detail view — coming soon"
-		status = "esc back"
+		content = m.detailModel.View(m.width, contentHeight)
+		status = "j/k navigate  |  enter select episode  |  esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""
@@ -151,6 +152,10 @@ func (m AppModel) propagateMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewSearch:
 		sm, cmd := m.searchModel.Update(msg)
 		m.searchModel = sm
+		return m, cmd
+	case ViewDetail:
+		dm, cmd := m.detailModel.Update(msg)
+		m.detailModel = dm
 		return m, cmd
 	}
 	return m, nil

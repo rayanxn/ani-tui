@@ -51,6 +51,9 @@ type Media struct {
 	Format             string            `json:"format"`   // TV, MOVIE, OVA, ONA, etc.
 	Genres             []string          `json:"genres"`
 	AverageScore       int               `json:"averageScore"`
+	Season             string            `json:"season"`     // WINTER, SPRING, SUMMER, FALL
+	SeasonYear         int               `json:"seasonYear"`
+	Source             string            `json:"source"`     // MANGA, LIGHT_NOVEL, VISUAL_NOVEL, etc.
 	Studios            StudioConnection  `json:"studios"`
 	NextAiringEpisode  *AiringSchedule   `json:"nextAiringEpisode"`
 }

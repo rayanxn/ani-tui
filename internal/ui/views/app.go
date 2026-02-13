@@ -3,6 +3,7 @@ package views
 import (
 	"github.com/charmbracelet/bubbletea"
 
+	"github.com/rayanxn/ani-tui/internal/anilist"
 	"github.com/rayanxn/ani-tui/internal/config"
 	"github.com/rayanxn/ani-tui/internal/ui"
 )
@@ -31,21 +32,24 @@ type (
 
 // AppModel is the root model that routes to sub-views.
 type AppModel struct {
-	currentView  ViewState
-	viewHistory  []ViewState
-	width        int
-	height       int
-	config       config.Config
-	searchModel  SearchModel
-	err          error
+	currentView    ViewState
+	viewHistory    []ViewState
+	width          int
+	height         int
+	config         config.Config
+	anilistClient  *anilist.Client
+	searchModel    SearchModel
+	err            error
 }
 
 // NewAppModel creates the root model with the given config.
 func NewAppModel(cfg config.Config) AppModel {
+	client := anilist.NewClient(cfg.AniListToken)
 	return AppModel{
-		currentView: ViewSearch,
-		config:      cfg,
-		searchModel: NewSearchModel(),
+		currentView:   ViewSearch,
+		config:        cfg,
+		anilistClient: client,
+		searchModel:   NewSearchModel(client),
 	}
 }
 
@@ -80,6 +84,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle between Search and Library (Phase 5)
 		}
 
+	case NavigateToDetailMsg:
+		m = m.pushView(ViewDetail)
+		// DetailModel will be initialized in Phase 2 detail view
+		return m, nil
+
 	case NavigateBackMsg:
 		return m.navigateBack()
 	}
@@ -106,7 +115,10 @@ func (m AppModel) View() string {
 	switch m.currentView {
 	case ViewSearch:
 		content = m.searchModel.View(m.width, contentHeight)
-		status = "Search anime  |  ? help  |  q quit"
+		status = "Search anime  |  / search  |  ? help  |  q quit"
+	case ViewDetail:
+		content = "Detail view — coming soon"
+		status = "esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""

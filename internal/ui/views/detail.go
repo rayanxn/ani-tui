@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -175,60 +176,95 @@ func (m DetailModel) renderVertical(width, height int) string {
 
 // renderMetadata formats the anime metadata block.
 func (m DetailModel) renderMetadata(width int) string {
-	title := ui.TitleStyle.Render(m.media.Title.DisplayTitle())
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary)
+	valueStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	subtleStyle := lipgloss.NewStyle().Foreground(ui.ColorSubtle)
+	divider := ui.DimDivider(width)
 
 	var lines []string
-	lines = append(lines, title)
 
+	// Title block
+	lines = append(lines, ui.TitleStyle.Render(m.media.Title.DisplayTitle()))
 	if m.media.Title.Native != "" {
 		lines = append(lines, ui.SubtitleStyle.Render(m.media.Title.Native))
 	}
+	lines = append(lines, divider)
 
-	lines = append(lines, "")
-
-	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary)
-	valueStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
-
-	addField := func(label, value string) {
-		if value != "" && value != "0" {
-			lines = append(lines, labelStyle.Render(label+": ")+valueStyle.Render(value))
+	// Two-column metadata grid
+	colWidth := width / 2
+	row := func(l1, v1, l2, v2 string) {
+		left := labelStyle.Render(l1+": ") + valueStyle.Render(v1)
+		padded := lipgloss.NewStyle().Width(colWidth).Render(left)
+		if l2 != "" {
+			right := labelStyle.Render(l2+": ") + valueStyle.Render(v2)
+			lines = append(lines, padded+right)
+		} else {
+			lines = append(lines, padded)
 		}
 	}
 
-	addField("Format", m.media.Format)
-	addField("Status", formatStatus(m.media.Status))
+	format := m.media.Format
+	status := formatStatus(m.media.Status)
+	if format != "" && status != "" {
+		row("Format", format, "Status", status)
+	} else if format != "" {
+		row("Format", format, "", "")
+	} else if status != "" {
+		row("Status", status, "", "")
+	}
 
+	episodes := ""
 	if m.media.Episodes > 0 {
-		addField("Episodes", fmt.Sprintf("%d", m.media.Episodes))
+		episodes = fmt.Sprintf("%d", m.media.Episodes)
 	}
+	duration := ""
 	if m.media.Duration > 0 {
-		addField("Duration", fmt.Sprintf("%d min/ep", m.media.Duration))
+		duration = fmt.Sprintf("%d min/ep", m.media.Duration)
 	}
+	if episodes != "" || duration != "" {
+		row("Episodes", episodes, "Duration", duration)
+	}
+
+	season := ""
+	if m.media.Season != "" && m.media.SeasonYear > 0 {
+		season = fmt.Sprintf("%s %d", formatSeason(m.media.Season), m.media.SeasonYear)
+	}
+	source := formatSource(m.media.Source)
+	if season != "" || source != "" {
+		row("Season", season, "Source", source)
+	}
+
 	if m.media.AverageScore > 0 {
-		addField("Score", fmt.Sprintf("%d%%", m.media.AverageScore))
+		score := ui.ScoreStyle.Render(fmt.Sprintf("★ %d%%", m.media.AverageScore))
+		lines = append(lines, labelStyle.Render("Score: ")+score)
 	}
+
+	if m.media.NextAiringEpisode != nil {
+		ep := m.media.NextAiringEpisode
+		lines = append(lines, labelStyle.Render("Next Episode: ")+valueStyle.Render(fmt.Sprintf("Ep %d", ep.Episode)))
+	}
+
+	// Genres / Studio section
+	lines = append(lines, divider)
+
 	if len(m.media.Genres) > 0 {
-		addField("Genres", strings.Join(m.media.Genres, ", "))
+		lines = append(lines, labelStyle.Render("Genres: ")+valueStyle.Render(strings.Join(m.media.Genres, " · ")))
 	}
 	if len(m.media.Studios.Nodes) > 0 {
 		names := make([]string, len(m.media.Studios.Nodes))
 		for i, s := range m.media.Studios.Nodes {
 			names[i] = s.Name
 		}
-		addField("Studio", strings.Join(names, ", "))
+		lines = append(lines, labelStyle.Render("Studio: ")+valueStyle.Render(strings.Join(names, ", ")))
 	}
 
-	if m.media.NextAiringEpisode != nil {
-		ep := m.media.NextAiringEpisode
-		addField("Next Episode", fmt.Sprintf("Ep %d", ep.Episode))
-	}
-
+	// Synopsis
 	if m.media.Description != "" {
-		lines = append(lines, "")
+		lines = append(lines, divider)
 		lines = append(lines, labelStyle.Render("Synopsis"))
 		desc := cleanDescription(m.media.Description)
 		wrapped := wordWrap(desc, width)
-		lines = append(lines, valueStyle.Render(wrapped))
+		lines = append(lines, subtleStyle.Render(wrapped))
 	}
 
 	return strings.Join(lines, "\n")
@@ -237,10 +273,12 @@ func (m DetailModel) renderMetadata(width int) string {
 // renderEpisodeSelector renders the episode list with cursor.
 func (m DetailModel) renderEpisodeSelector(width, height int) string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary).Padding(0, 1)
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorSubtle)
 	header := titleStyle.Render("Episodes")
+	divider := "  " + ui.DimDivider(width-4)
 
-	// Available lines for episode items (minus header line and padding)
-	listHeight := height - 2
+	// Available lines for episode items (minus header, divider, and padding)
+	listHeight := height - 3
 	if listHeight < 1 {
 		listHeight = 1
 	}
@@ -258,14 +296,14 @@ func (m DetailModel) renderEpisodeSelector(width, height int) string {
 			continue
 		}
 
-		label := fmt.Sprintf("  Episode %d", i)
 		if i == m.selectedEpisode {
-			label = ui.SelectedItemStyle.Render(fmt.Sprintf("▸ Episode %d", i))
+			items = append(items, ui.SelectedItemStyle.Render(fmt.Sprintf("▸ Episode %d", i)))
+		} else {
+			items = append(items, dimStyle.Render(fmt.Sprintf("  Episode %d", i)))
 		}
-		items = append(items, label)
 	}
 
-	content := header + "\n" + strings.Join(items, "\n")
+	content := header + "\n" + divider + "\n" + strings.Join(items, "\n")
 
 	return lipgloss.NewStyle().
 		Width(width).
@@ -300,7 +338,7 @@ func formatStatus(status string) string {
 	}
 }
 
-// cleanDescription strips HTML tags from AniList descriptions.
+// cleanDescription strips HTML tags and decodes HTML entities from AniList descriptions.
 func cleanDescription(s string) string {
 	var result strings.Builder
 	inTag := false
@@ -314,7 +352,29 @@ func cleanDescription(s string) string {
 			result.WriteRune(r)
 		}
 	}
-	return strings.TrimSpace(result.String())
+	return html.UnescapeString(strings.TrimSpace(result.String()))
+}
+
+// formatSeason converts AniList season enum to title case (e.g. WINTER -> Winter).
+func formatSeason(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
+}
+
+// formatSource converts AniList source enum to readable text (e.g. LIGHT_NOVEL -> Light Novel).
+func formatSource(s string) string {
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, "_")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // wordWrap wraps text to the given width at word boundaries.

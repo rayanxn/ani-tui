@@ -43,6 +43,9 @@ query GetAnimeDetails($id: Int!) {
     episodes
     duration
     averageScore
+    season
+    seasonYear
+    source
     genres
     studios(isMain: true) {
       nodes {

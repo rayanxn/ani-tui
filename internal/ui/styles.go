@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Color palette — purple/magenta theme with adaptive light/dark support.
 var (
@@ -78,6 +82,17 @@ var BorderedBoxStyle = lipgloss.NewStyle().
 // SpinnerStyle for loading spinners.
 var SpinnerStyle = lipgloss.NewStyle().
 	Foreground(ColorSecondary)
+
+// ScoreStyle for displaying anime scores with gold/yellow color.
+var ScoreStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.AdaptiveColor{Light: "#B8860B", Dark: "#FFD700"})
+
+// DimDivider returns a horizontal line in the subtle color.
+func DimDivider(width int) string {
+	line := strings.Repeat("─", width)
+	return lipgloss.NewStyle().Foreground(ColorSubtle).Render(line)
+}
 
 // CenterHorizontal centers text horizontally within the given width.
 func CenterHorizontal(width int, s string) string {

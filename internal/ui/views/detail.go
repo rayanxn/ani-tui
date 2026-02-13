@@ -275,7 +275,7 @@ func (m DetailModel) renderEpisodeSelector(width, height int) string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary).Padding(0, 1)
 	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorSubtle)
 	header := titleStyle.Render("Episodes")
-	divider := "  " + ui.DimDivider(width-4)
+	divider := "  " + ui.DimDivider(max(0, width-4))
 
 	// Available lines for episode items (minus header, divider, and padding)
 	listHeight := height - 3
@@ -340,6 +340,9 @@ func formatStatus(status string) string {
 
 // cleanDescription strips HTML tags and decodes HTML entities from AniList descriptions.
 func cleanDescription(s string) string {
+	// Convert <br> / <br/> tags to newlines before stripping HTML
+	s = strings.NewReplacer("<br>", "\n", "<br/>", "\n", "<br />", "\n").Replace(s)
+
 	var result strings.Builder
 	inTag := false
 	for _, r := range s {

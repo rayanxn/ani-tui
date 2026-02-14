@@ -23,24 +23,28 @@ const (
 // Navigation messages emitted by sub-views.
 type (
 	NavigateToDetailMsg   struct{ AnimeID int }
-	NavigateToTorrentsMsg struct{ AnimeTitle string; Episode int }
-	NavigateToPlayerMsg   struct{ MagnetURI string }
-	NavigateToLibraryMsg  struct{}
-	NavigateToAuthMsg     struct{}
-	NavigateBackMsg       struct{}
+	NavigateToTorrentsMsg struct {
+		AnimeTitle string
+		Episode    int
+	}
+	NavigateToPlayerMsg  struct{ MagnetURI string }
+	NavigateToLibraryMsg struct{}
+	NavigateToAuthMsg    struct{}
+	NavigateBackMsg      struct{}
 )
 
 // AppModel is the root model that routes to sub-views.
 type AppModel struct {
-	currentView    ViewState
-	viewHistory    []ViewState
-	width          int
-	height         int
-	config         config.Config
-	anilistClient  *anilist.Client
-	searchModel    SearchModel
-	detailModel    DetailModel
-	err            error
+	currentView   ViewState
+	viewHistory   []ViewState
+	width         int
+	height        int
+	config        config.Config
+	anilistClient *anilist.Client
+	searchModel   SearchModel
+	detailModel   DetailModel
+	torrentsModel TorrentsModel
+	err           error
 }
 
 // NewAppModel creates the root model with the given config.
@@ -90,8 +94,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailModel = NewDetailModel(m.anilistClient, msg.AnimeID)
 		return m, m.detailModel.Init()
 
+	case NavigateToTorrentsMsg:
+		m = m.pushView(ViewTorrents)
+		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.Episode, m.config.PreferredQuality)
+		return m, m.torrentsModel.Init()
+
 	case NavigateBackMsg:
 		return m.navigateBack()
+	case NavigateToPlayerMsg:
+		m = m.pushView(ViewPlayer)
+		return m, nil
 	}
 
 	return m.propagateMsg(msg)
@@ -120,6 +132,9 @@ func (m AppModel) View() string {
 	case ViewDetail:
 		content = m.detailModel.View(m.width, contentHeight)
 		status = "j/k navigate  |  enter select episode  |  esc back"
+	case ViewTorrents:
+		content = m.torrentsModel.View(m.width, contentHeight)
+		status = "j/k navigate  |  enter stream  |  esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""
@@ -156,6 +171,10 @@ func (m AppModel) propagateMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewDetail:
 		dm, cmd := m.detailModel.Update(msg)
 		m.detailModel = dm
+		return m, cmd
+	case ViewTorrents:
+		tm, cmd := m.torrentsModel.Update(msg)
+		m.torrentsModel = tm
 		return m, cmd
 	}
 	return m, nil

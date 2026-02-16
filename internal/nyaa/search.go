@@ -67,12 +67,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]Item, error) {
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml")
 
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 20 * time.Second}
-	}
-
-	resp, err := httpClient.Do(req)
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

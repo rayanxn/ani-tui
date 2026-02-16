@@ -13,6 +13,13 @@ import (
 
 const defaultFeedURL = "https://nyaa.si/"
 
+const (
+	// categoryAnimeEnglish filters results to Anime > English-translated (c=1_2).
+	categoryAnimeEnglish = "1_2"
+	// filterNoFilter applies no torrent filter (f=0: show all results).
+	filterNoFilter = "0"
+)
+
 // Client fetches and decodes nyaa RSS results.
 type Client struct {
 	BaseURL    string
@@ -57,8 +64,8 @@ func (c *Client) Search(ctx context.Context, query string) ([]Item, error) {
 	q := u.Query()
 	q.Set("page", "rss")
 	q.Set("q", query)
-	q.Set("c", "1_2")
-	q.Set("f", "0")
+	q.Set("c", categoryAnimeEnglish)
+	q.Set("f", filterNoFilter)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

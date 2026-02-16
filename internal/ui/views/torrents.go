@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -26,9 +27,28 @@ type TorrentListItem struct {
 	item nyaa.Item
 }
 
-func (i TorrentListItem) Title() string       { return i.item.Title }
+func (i TorrentListItem) Title() string {
+	if i.item.IsTrusted() {
+		return "✓ " + i.item.Title
+	}
+	return i.item.Title
+}
 func (i TorrentListItem) Description() string { return i.item.Summary() }
 func (i TorrentListItem) FilterValue() string { return i.item.Title }
+
+// torrentDelegate wraps DefaultDelegate to highlight trusted torrents.
+type torrentDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d torrentDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	ti, ok := item.(TorrentListItem)
+	if ok && ti.item.IsTrusted() {
+		d.Styles.NormalTitle = d.Styles.NormalTitle.Foreground(ui.ColorSuccess)
+		d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(ui.ColorSuccess)
+	}
+	d.DefaultDelegate.Render(w, m, index, item)
+}
 
 // TorrentsModel displays nyaa search results for a selected episode.
 type TorrentsModel struct {
@@ -44,13 +64,14 @@ type TorrentsModel struct {
 
 // NewTorrentsModel creates a torrents results view.
 func NewTorrentsModel(animeTitle string, episode int, preferredQuality string) TorrentsModel {
-	delegate := list.NewDefaultDelegate()
-	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
+	base := list.NewDefaultDelegate()
+	base.Styles.SelectedTitle = base.Styles.SelectedTitle.
 		Foreground(ui.ColorPrimary).
 		BorderLeftForeground(ui.ColorPrimary)
-	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.
+	base.Styles.SelectedDesc = base.Styles.SelectedDesc.
 		Foreground(ui.ColorSecondary).
 		BorderLeftForeground(ui.ColorPrimary)
+	delegate := torrentDelegate{DefaultDelegate: base}
 
 	l := list.New(nil, delegate, 0, 0)
 	l.Title = "Torrents"

@@ -53,7 +53,7 @@ func NewTorrentsModel(animeTitle string, episode int, preferredQuality string) T
 		BorderLeftForeground(ui.ColorPrimary)
 
 	l := list.New(nil, delegate, 0, 0)
-	l.Title = "Torrents"
+	l.Title = fmt.Sprintf("Torrents - Episode %d", episode)
 	l.SetShowHelp(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)

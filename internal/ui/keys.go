@@ -50,3 +50,15 @@ var SearchKeys = SearchKeyMap{
 		key.WithHelp("/", "focus search"),
 	),
 }
+
+// TorrentsKeyMap defines keybindings for the torrents view.
+type TorrentsKeyMap struct {
+	Retry key.Binding
+}
+
+var TorrentsKeys = TorrentsKeyMap{
+	Retry: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "retry search"),
+	),
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -14,10 +15,19 @@ import (
 	"github.com/rayanxn/ani-tui/internal/ui"
 )
 
+const maxRetries = 3
+
 // NyaaResultsMsg carries nyaa search results back to the torrents view.
 type NyaaResultsMsg struct {
 	Results []nyaa.Item
 	Query   string
+	Err     error
+}
+
+// NyaaRetryMsg signals that a transient failure occurred and a retry is needed.
+type NyaaRetryMsg struct {
+	Query   string
+	Attempt int
 	Err     error
 }
 
@@ -39,6 +49,8 @@ type TorrentsModel struct {
 	list       list.Model
 	spinner    spinner.Model
 	loading    bool
+	retrying   bool
+	retryCount int
 	err        error
 }
 
@@ -91,6 +103,8 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 
 	case NyaaResultsMsg:
 		m.loading = false
+		m.retrying = false
+		m.retryCount = 0
 		if msg.Err != nil {
 			m.err = msg.Err
 			return m, nil
@@ -102,6 +116,13 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 		return m, nil
+
+	case NyaaRetryMsg:
+		m.retrying = true
+		m.retryCount = msg.Attempt
+		m.loading = true
+		m.err = nil
+		return m, tea.Batch(m.spinner.Tick, retrySearchCmd(msg.Query, msg.Attempt))
 
 	case spinner.TickMsg:
 		if m.loading {
@@ -125,6 +146,14 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return NavigateToPlayerMsg{MagnetURI: magnetURI}
+			}
+		case "r":
+			if !m.loading {
+				m.loading = true
+				m.retrying = false
+				m.retryCount = 0
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, searchNyaaCmd(m.query))
 			}
 		}
 
@@ -153,10 +182,15 @@ func (m TorrentsModel) View(width, height int) string {
 
 	var body string
 	switch {
+	case m.loading && m.retrying:
+		body = lipgloss.NewStyle().Padding(1, 2).Render(
+			m.spinner.View() + fmt.Sprintf(" Retrying... (attempt %d/%d)", m.retryCount, maxRetries))
 	case m.loading:
 		body = lipgloss.NewStyle().Padding(1, 2).Render(m.spinner.View() + " Searching nyaa.si...")
 	case m.err != nil:
-		body = lipgloss.NewStyle().Padding(1, 0).Render(ui.RenderError(m.err.Error()))
+		body = lipgloss.NewStyle().Padding(1, 0).Render(
+			ui.RenderError(m.err.Error()) + "\n" +
+				ui.HelpStyle.Render("  press r to retry"))
 	case len(m.list.Items()) == 0:
 		body = ui.HelpStyle.Render("  No torrents found for this episode")
 	default:
@@ -170,6 +204,23 @@ func (m TorrentsModel) View(width, height int) string {
 func searchNyaaCmd(query string) tea.Cmd {
 	return func() tea.Msg {
 		results, err := nyaa.Search(context.Background(), query)
+		if err != nil && nyaa.IsTransient(err) {
+			return NyaaRetryMsg{Query: query, Attempt: 1, Err: err}
+		}
+		return NyaaResultsMsg{Results: results, Query: query, Err: err}
+	}
+}
+
+func retrySearchCmd(query string, attempt int) tea.Cmd {
+	return func() tea.Msg {
+		// Exponential backoff: 1s, 2s, 4s
+		delay := time.Duration(1<<uint(attempt-1)) * time.Second
+		time.Sleep(delay)
+
+		results, err := nyaa.Search(context.Background(), query)
+		if err != nil && nyaa.IsTransient(err) && attempt < maxRetries {
+			return NyaaRetryMsg{Query: query, Attempt: attempt + 1, Err: err}
+		}
 		return NyaaResultsMsg{Results: results, Query: query, Err: err}
 	}
 }

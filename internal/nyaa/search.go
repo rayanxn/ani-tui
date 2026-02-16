@@ -3,6 +3,7 @@ package nyaa
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,35 @@ import (
 	"strings"
 	"time"
 )
+
+// StatusError represents an HTTP status code error from nyaa.
+type StatusError struct {
+	Code int
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("nyaa returned status %d", e.Code)
+}
+
+// IsTransient reports whether the error is a transient failure worth retrying
+// (5xx server errors or network timeouts).
+func IsTransient(err error) bool {
+	if err == nil {
+		return false
+	}
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Code >= 500
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr interface{ Timeout() bool }
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
+}
 
 const defaultFeedURL = "https://nyaa.si/"
 
@@ -79,7 +109,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]Item, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("nyaa returned status %d", resp.StatusCode)
+		return nil, &StatusError{Code: resp.StatusCode}
 	}
 
 	var rss RSS

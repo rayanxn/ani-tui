@@ -79,7 +79,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]Item, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("nyaa returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("nyaa request failed: status %d", resp.StatusCode)
 	}
 
 	var rss RSS

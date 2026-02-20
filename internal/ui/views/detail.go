@@ -86,7 +86,14 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.loading || m.err != nil {
+		if m.loading {
+			return m, nil
+		}
+		if m.err != nil {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.err = nil
+				return m, nil
+			}
 			return m, nil
 		}
 		switch msg.String() {

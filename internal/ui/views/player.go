@@ -34,20 +34,24 @@ type (
 	mpvExitMsg   struct{ err error }
 )
 
+const streamTimeout = 2 * time.Minute
+
 // PlayerModel manages torrent streaming and mpv playback.
 type PlayerModel struct {
-	magnetURI  string
-	animeTitle string
-	episode    int
-	animeID    int
-	cfg        config.Config
-	torrentClient  *torrent.Client
-	session    *player.Session
-	stats      torrent.Stats
-	spinner    spinner.Model
-	loading    bool
-	done       bool
-	err        error
+	magnetURI    string
+	animeTitle   string
+	episode      int
+	animeID      int
+	cfg          config.Config
+	streamCtx    context.Context
+	streamCancel context.CancelFunc
+	torrentClient *torrent.Client
+	session      *player.Session
+	stats        torrent.Stats
+	spinner      spinner.Model
+	loading      bool
+	done         bool
+	err          error
 }
 
 // NewPlayerModel creates a player view for the given magnet URI.
@@ -56,21 +60,25 @@ func NewPlayerModel(magnetURI, animeTitle string, episode, animeID int, cfg conf
 	s.Spinner = spinner.Dot
 	s.Style = ui.SpinnerStyle
 
+	ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
+
 	return PlayerModel{
-		magnetURI:  magnetURI,
-		animeTitle: animeTitle,
-		episode:    episode,
-		animeID:    animeID,
-		cfg:        cfg,
-		spinner:    s,
-		loading:    true,
+		magnetURI:    magnetURI,
+		animeTitle:   animeTitle,
+		episode:      episode,
+		animeID:      animeID,
+		cfg:          cfg,
+		streamCtx:    ctx,
+		streamCancel: cancel,
+		spinner:      s,
+		loading:      true,
 	}
 }
 
 func (m PlayerModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		startStreamCmd(m.magnetURI, m.cfg),
+		startStreamCmd(m.streamCtx, m.magnetURI, m.cfg),
 	)
 }
 
@@ -111,6 +119,15 @@ func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
 			}
 		}
 
+	case tea.KeyMsg:
+		if m.err != nil {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.err = nil
+				return m, nil
+			}
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.loading {
 			var cmd tea.Cmd
@@ -133,7 +150,7 @@ func (m PlayerModel) View(width, height int) string {
 	switch {
 	case m.loading:
 		body = lipgloss.NewStyle().Padding(1, 2).Render(
-			m.spinner.View() + " Starting stream...",
+			m.spinner.View() + " Starting stream (esc to cancel)...",
 		)
 	case m.err != nil:
 		body = lipgloss.NewStyle().Padding(1, 0).Render(ui.RenderError(m.err.Error()))
@@ -181,6 +198,9 @@ func (m PlayerModel) renderStats(width int) string {
 
 // Cleanup releases torrent and player resources.
 func (m PlayerModel) Cleanup() {
+	if m.streamCancel != nil {
+		m.streamCancel()
+	}
 	if m.session != nil {
 		m.session.Close()
 	}
@@ -189,14 +209,14 @@ func (m PlayerModel) Cleanup() {
 	}
 }
 
-func startStreamCmd(magnetURI string, cfg config.Config) tea.Cmd {
+func startStreamCmd(ctx context.Context, magnetURI string, cfg config.Config) tea.Cmd {
 	return func() tea.Msg {
 		tc, err := torrent.NewClient(cfg.DownloadDir)
 		if err != nil {
 			return playerReadyMsg{err: fmt.Errorf("create torrent client: %w", err)}
 		}
 
-		reader, filename, err := tc.AddMagnetAndStream(context.Background(), magnetURI)
+		reader, filename, err := tc.AddMagnetAndStream(ctx, magnetURI)
 		if err != nil {
 			tc.Close()
 			return playerReadyMsg{err: fmt.Errorf("stream torrent: %w", err)}

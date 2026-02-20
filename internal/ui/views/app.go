@@ -2,9 +2,11 @@ package views
 
 import (
 	"context"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rayanxn/ani-tui/internal/anilist"
 	"github.com/rayanxn/ani-tui/internal/config"
@@ -59,6 +61,7 @@ type AppModel struct {
 	playerModel   PlayerModel
 	libraryModel  LibraryModel
 	authModel     AuthModel
+	showHelp      bool
 	err           error
 }
 
@@ -85,24 +88,34 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.propagateMsg(msg)
 
 	case tea.KeyMsg:
+		// Dismiss help overlay on any key
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
-			if m.currentView == ViewPlayer {
-				m.playerModel.Cleanup()
-			}
+			m.cleanup()
 			return m, tea.Quit
 		case "q":
 			if m.currentView == ViewSearch && !m.searchModel.inputFocused() {
+				m.cleanup()
 				return m, tea.Quit
 			}
 			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() != list.Filtering {
+				m.cleanup()
 				return m, tea.Quit
 			}
 		case "esc":
+			if m.activeViewHasError() {
+				return m.propagateMsg(msg)
+			}
 			if m.currentView == ViewSearch {
 				if m.searchModel.inputFocused() {
 					return m.propagateMsg(msg)
 				}
+				m.cleanup()
 				return m, tea.Quit
 			}
 			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() == list.Filtering {
@@ -115,6 +128,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.playerModel.Cleanup()
 			}
 			return m.navigateBack()
+
+		case "?":
+			// Suppress when text inputs are focused
+			if m.currentView == ViewSearch && m.searchModel.inputFocused() {
+				return m.propagateMsg(msg)
+			}
+			if m.currentView == ViewAuth {
+				return m.propagateMsg(msg)
+			}
+			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() == list.Filtering {
+				return m.propagateMsg(msg)
+			}
+			m.showHelp = true
+			return m, nil
 		case "tab", "shift+tab":
 			if m.currentView == ViewSearch && !m.searchModel.inputFocused() && msg.String() == "tab" {
 				if m.config.AniListToken == "" {
@@ -172,6 +199,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.libraryModel = NewLibraryModel(m.anilistClient, msg.UserID)
 		return m, m.libraryModel.Init()
 
+	case playerReadyMsg:
+		// If user navigated away while stream was loading, clean up resources
+		if m.currentView != ViewPlayer {
+			if msg.session != nil {
+				msg.session.Close()
+			}
+			if msg.torrentClient != nil {
+				msg.torrentClient.Close()
+			}
+			return m, nil
+		}
+		return m.propagateMsg(msg)
+
 	case PlayerDoneMsg:
 		// Navigate back from player
 		if len(m.viewHistory) > 0 {
@@ -211,25 +251,29 @@ func (m AppModel) View() string {
 	switch m.currentView {
 	case ViewSearch:
 		content = m.searchModel.View(m.width, contentHeight)
-		status = "Search anime  |  / search  |  tab library  |  q quit"
+		status = "/ search  |  tab library  |  ? help  |  q quit"
 	case ViewDetail:
 		content = m.detailModel.View(m.width, contentHeight)
-		status = "j/k navigate  |  enter select episode  |  esc back"
+		status = "j/k navigate  |  enter select  |  ? help  |  esc back"
 	case ViewTorrents:
 		content = m.torrentsModel.View(m.width, contentHeight)
-		status = "j/k navigate  |  enter stream  |  esc back"
+		status = "j/k navigate  |  enter stream  |  ? help  |  esc back"
 	case ViewPlayer:
 		content = m.playerModel.View(m.width, contentHeight)
-		status = "esc back"
+		status = "? help  |  esc back"
 	case ViewLibrary:
 		content = m.libraryModel.View(m.width, contentHeight)
-		status = "tab/shift+tab category  |  r refresh  |  enter select  |  esc back"
+		status = "tab category  |  enter select  |  ? help  |  esc back"
 	case ViewAuth:
 		content = m.authModel.View(m.width, contentHeight)
 		status = "AniList login  |  esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""
+	}
+
+	if m.showHelp {
+		content = m.renderHelpOverlay(m.width, contentHeight)
 	}
 
 	statusBar := ui.RenderStatusBar(m.width, status)
@@ -243,9 +287,103 @@ func (m AppModel) pushView(next ViewState) AppModel {
 	return m
 }
 
+// renderHelpOverlay returns a centered help box with context-sensitive keybindings.
+func (m AppModel) renderHelpOverlay(width, height int) string {
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary)
+	descStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+
+	type binding struct{ key, desc string }
+	var bindings []binding
+
+	switch m.currentView {
+	case ViewSearch:
+		bindings = []binding{
+			{"/", "Focus search input"},
+			{"enter", "Search / select anime"},
+			{"j/k", "Navigate results"},
+			{"tab", "Open library"},
+			{"esc", "Unfocus input / quit"},
+			{"q", "Quit"},
+		}
+	case ViewDetail:
+		bindings = []binding{
+			{"j/k", "Navigate episodes"},
+			{"g/G", "First / last episode"},
+			{"enter", "Search torrents for episode"},
+			{"esc", "Go back"},
+		}
+	case ViewTorrents:
+		bindings = []binding{
+			{"j/k", "Navigate torrents"},
+			{"enter", "Stream selected torrent"},
+			{"esc", "Go back"},
+		}
+	case ViewPlayer:
+		bindings = []binding{
+			{"esc", "Stop playback and go back"},
+		}
+	case ViewLibrary:
+		bindings = []binding{
+			{"tab", "Next category"},
+			{"shift+tab", "Previous category"},
+			{"/", "Filter list"},
+			{"r", "Refresh library"},
+			{"enter", "View anime details"},
+			{"q", "Quit"},
+			{"esc", "Go back"},
+		}
+	}
+
+	// Always-available bindings
+	bindings = append(bindings,
+		binding{"?", "Toggle this help"},
+		binding{"ctrl+c", "Force quit"},
+	)
+
+	var lines []string
+	lines = append(lines, ui.TitleStyle.Render("Keybindings"))
+	lines = append(lines, "")
+	for _, b := range bindings {
+		line := keyStyle.Width(12).Render(b.key) + descStyle.Render(b.desc)
+		lines = append(lines, line)
+	}
+	lines = append(lines, "")
+	lines = append(lines, ui.HelpStyle.Render("Press any key to dismiss"))
+
+	boxWidth := 42
+	if width-4 < boxWidth {
+		boxWidth = width - 4
+	}
+	box := ui.BorderedBoxStyle.Width(boxWidth).Render(strings.Join(lines, "\n"))
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// activeViewHasError reports whether the current view is showing an error.
+func (m AppModel) activeViewHasError() bool {
+	switch m.currentView {
+	case ViewSearch:
+		return m.searchModel.err != nil
+	case ViewDetail:
+		return m.detailModel.err != nil
+	case ViewTorrents:
+		return m.torrentsModel.err != nil
+	case ViewPlayer:
+		return m.playerModel.err != nil
+	case ViewLibrary:
+		return m.libraryModel.err != nil
+	}
+	return false
+}
+
+// cleanup releases resources before quitting.
+func (m *AppModel) cleanup() {
+	m.playerModel.Cleanup()
+}
+
 // navigateBack pops the view stack and returns to the previous view.
 func (m AppModel) navigateBack() (tea.Model, tea.Cmd) {
 	if len(m.viewHistory) == 0 {
+		m.cleanup()
 		return m, tea.Quit
 	}
 	m.currentView = m.viewHistory[len(m.viewHistory)-1]

@@ -27,7 +27,11 @@ type (
 		AnimeTitle string
 		Episode    int
 	}
-	NavigateToPlayerMsg  struct{ MagnetURI string }
+	NavigateToPlayerMsg struct {
+		MagnetURI  string
+		AnimeTitle string
+		Episode    int
+	}
 	NavigateToLibraryMsg struct{}
 	NavigateToAuthMsg    struct{}
 	NavigateBackMsg      struct{}
@@ -44,6 +48,7 @@ type AppModel struct {
 	searchModel   SearchModel
 	detailModel   DetailModel
 	torrentsModel TorrentsModel
+	playerModel   PlayerModel
 	err           error
 }
 
@@ -72,6 +77,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			if m.currentView == ViewPlayer {
+				m.playerModel.Cleanup()
+			}
 			return m, tea.Quit
 		case "q":
 			if m.currentView == ViewSearch && !m.searchModel.inputFocused() {
@@ -83,6 +91,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.propagateMsg(msg)
 				}
 				return m, tea.Quit
+			}
+			if m.currentView == ViewPlayer {
+				m.playerModel.Cleanup()
 			}
 			return m.navigateBack()
 		case "tab":
@@ -103,7 +114,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.navigateBack()
 	case NavigateToPlayerMsg:
 		m = m.pushView(ViewPlayer)
-		return m, nil
+		m.playerModel = NewPlayerModel(msg.MagnetURI, msg.AnimeTitle, msg.Episode, m.config)
+		return m, m.playerModel.Init()
 	}
 
 	return m.propagateMsg(msg)
@@ -135,6 +147,9 @@ func (m AppModel) View() string {
 	case ViewTorrents:
 		content = m.torrentsModel.View(m.width, contentHeight)
 		status = "j/k navigate  |  enter stream  |  esc back"
+	case ViewPlayer:
+		content = m.playerModel.View(m.width, contentHeight)
+		status = "esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""
@@ -175,6 +190,10 @@ func (m AppModel) propagateMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewTorrents:
 		tm, cmd := m.torrentsModel.Update(msg)
 		m.torrentsModel = tm
+		return m, cmd
+	case ViewPlayer:
+		pm, cmd := m.playerModel.Update(msg)
+		m.playerModel = pm
 		return m, cmd
 	}
 	return m, nil

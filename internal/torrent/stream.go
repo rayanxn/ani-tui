@@ -10,8 +10,8 @@ import (
 const readaheadBytes = 10 * 1024 * 1024 // 10 MB
 
 // AddMagnetAndStream adds a magnet URI, waits for metadata, and returns a
-// Reader for the largest file in the torrent.
-func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torrent.Reader, error) {
+// Reader for the largest file in the torrent along with its filename.
+func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torrent.Reader, string, error) {
 	if c.activeTor != nil {
 		c.activeTor.Drop()
 		c.activeTor = nil
@@ -19,7 +19,7 @@ func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torr
 
 	t, err := c.client.AddMagnet(magnetURI)
 	if err != nil {
-		return nil, fmt.Errorf("add magnet: %w", err)
+		return nil, "", fmt.Errorf("add magnet: %w", err)
 	}
 	c.activeTor = t
 
@@ -29,7 +29,7 @@ func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torr
 	case <-ctx.Done():
 		t.Drop()
 		c.activeTor = nil
-		return nil, fmt.Errorf("metadata wait cancelled: %w", ctx.Err())
+		return nil, "", fmt.Errorf("metadata wait cancelled: %w", ctx.Err())
 	}
 
 	// Find the largest file (the video).
@@ -37,7 +37,7 @@ func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torr
 	if len(files) == 0 {
 		t.Drop()
 		c.activeTor = nil
-		return nil, fmt.Errorf("torrent has no files")
+		return nil, "", fmt.Errorf("torrent has no files")
 	}
 
 	largest := files[0]
@@ -58,7 +58,7 @@ func (c *Client) AddMagnetAndStream(ctx context.Context, magnetURI string) (torr
 	reader.SetReadahead(readaheadBytes)
 	reader.SetResponsive()
 
-	return reader, nil
+	return reader, largest.DisplayPath(), nil
 }
 
 // ActiveTorrent returns the currently active torrent, or nil.

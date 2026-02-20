@@ -16,6 +16,13 @@ import (
 	"github.com/rayanxn/ani-tui/internal/ui"
 )
 
+// PlayerDoneMsg is emitted when mpv exits, carrying playback context for progress tracking.
+type PlayerDoneMsg struct {
+	AnimeID    int
+	AnimeTitle string
+	Episode    int
+}
+
 // Messages for the player view lifecycle.
 type (
 	playerReadyMsg struct {
@@ -32,6 +39,7 @@ type PlayerModel struct {
 	magnetURI  string
 	animeTitle string
 	episode    int
+	animeID    int
 	cfg        config.Config
 	torrentClient  *torrent.Client
 	session    *player.Session
@@ -43,7 +51,7 @@ type PlayerModel struct {
 }
 
 // NewPlayerModel creates a player view for the given magnet URI.
-func NewPlayerModel(magnetURI, animeTitle string, episode int, cfg config.Config) PlayerModel {
+func NewPlayerModel(magnetURI, animeTitle string, episode, animeID int, cfg config.Config) PlayerModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = ui.SpinnerStyle
@@ -52,6 +60,7 @@ func NewPlayerModel(magnetURI, animeTitle string, episode int, cfg config.Config
 		magnetURI:  magnetURI,
 		animeTitle: animeTitle,
 		episode:    episode,
+		animeID:    animeID,
 		cfg:        cfg,
 		spinner:    s,
 		loading:    true,
@@ -93,7 +102,14 @@ func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
 
 	case mpvExitMsg:
 		m.done = true
-		return m, func() tea.Msg { return NavigateBackMsg{} }
+		m.Cleanup()
+		return m, func() tea.Msg {
+			return PlayerDoneMsg{
+				AnimeID:    m.animeID,
+				AnimeTitle: m.animeTitle,
+				Episode:    m.episode,
+			}
+		}
 
 	case spinner.TickMsg:
 		if m.loading {

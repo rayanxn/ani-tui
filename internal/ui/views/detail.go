@@ -108,6 +108,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		case "enter":
 			return m, func() tea.Msg {
 				return NavigateToTorrentsMsg{
+					AnimeID:    m.animeID,
 					AnimeTitle: m.media.Title.DisplayTitle(),
 					Episode:    m.selectedEpisode,
 				}

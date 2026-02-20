@@ -1,7 +1,10 @@
 package views
 
 import (
-	"github.com/charmbracelet/bubbletea"
+	"context"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rayanxn/ani-tui/internal/anilist"
 	"github.com/rayanxn/ani-tui/internal/config"
@@ -24,18 +27,23 @@ const (
 type (
 	NavigateToDetailMsg   struct{ AnimeID int }
 	NavigateToTorrentsMsg struct {
+		AnimeID    int
 		AnimeTitle string
 		Episode    int
 	}
 	NavigateToPlayerMsg struct {
 		MagnetURI  string
+		AnimeID    int
 		AnimeTitle string
 		Episode    int
 	}
 	NavigateToLibraryMsg struct{}
-	NavigateToAuthMsg    struct{}
 	NavigateBackMsg      struct{}
 )
+
+type updateProgressMsg struct {
+	err error
+}
 
 // AppModel is the root model that routes to sub-views.
 type AppModel struct {
@@ -49,6 +57,8 @@ type AppModel struct {
 	detailModel   DetailModel
 	torrentsModel TorrentsModel
 	playerModel   PlayerModel
+	libraryModel  LibraryModel
+	authModel     AuthModel
 	err           error
 }
 
@@ -85,6 +95,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == ViewSearch && !m.searchModel.inputFocused() {
 				return m, tea.Quit
 			}
+			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() != list.Filtering {
+				return m, tea.Quit
+			}
 		case "esc":
 			if m.currentView == ViewSearch {
 				if m.searchModel.inputFocused() {
@@ -92,12 +105,30 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, tea.Quit
 			}
+			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() == list.Filtering {
+				return m.propagateMsg(msg)
+			}
+			if m.currentView == ViewAuth && (m.authModel.step == authVerifying || m.authModel.step == authSaving) {
+				return m, nil
+			}
 			if m.currentView == ViewPlayer {
 				m.playerModel.Cleanup()
 			}
 			return m.navigateBack()
-		case "tab":
-			// Toggle between Search and Library (Phase 5)
+		case "tab", "shift+tab":
+			if m.currentView == ViewSearch && !m.searchModel.inputFocused() && msg.String() == "tab" {
+				if m.config.AniListToken == "" {
+					m = m.pushView(ViewAuth)
+					m.authModel = NewAuthModel()
+					return m, m.authModel.Init()
+				}
+				m = m.pushView(ViewLibrary)
+				m.libraryModel = NewLibraryModel(m.anilistClient, m.config.AniListUserID)
+				return m, m.libraryModel.Init()
+			}
+			if m.currentView == ViewLibrary {
+				return m.propagateMsg(msg)
+			}
 		}
 
 	case NavigateToDetailMsg:
@@ -107,15 +138,55 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NavigateToTorrentsMsg:
 		m = m.pushView(ViewTorrents)
-		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.Episode, m.config.PreferredQuality)
+		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.AnimeID, msg.Episode, m.config.PreferredQuality)
 		return m, m.torrentsModel.Init()
+
+	case NavigateToPlayerMsg:
+		m = m.pushView(ViewPlayer)
+		m.playerModel = NewPlayerModel(msg.MagnetURI, msg.AnimeTitle, msg.Episode, msg.AnimeID, m.config)
+		return m, m.playerModel.Init()
 
 	case NavigateBackMsg:
 		return m.navigateBack()
-	case NavigateToPlayerMsg:
-		m = m.pushView(ViewPlayer)
-		m.playerModel = NewPlayerModel(msg.MagnetURI, msg.AnimeTitle, msg.Episode, m.config)
-		return m, m.playerModel.Init()
+
+	case NavigateToLibraryMsg:
+		if m.config.AniListToken == "" {
+			m = m.pushView(ViewAuth)
+			m.authModel = NewAuthModel()
+			return m, m.authModel.Init()
+		}
+		m = m.pushView(ViewLibrary)
+		m.libraryModel = NewLibraryModel(m.anilistClient, m.config.AniListUserID)
+		return m, m.libraryModel.Init()
+
+	case AuthCompleteMsg:
+		m.config.AniListToken = msg.Token
+		m.config.AniListUserID = msg.UserID
+		m.anilistClient = anilist.NewClient(msg.Token)
+		// Pop the auth view and push to library
+		if len(m.viewHistory) > 0 {
+			m.currentView = m.viewHistory[len(m.viewHistory)-1]
+			m.viewHistory = m.viewHistory[:len(m.viewHistory)-1]
+		}
+		m = m.pushView(ViewLibrary)
+		m.libraryModel = NewLibraryModel(m.anilistClient, msg.UserID)
+		return m, m.libraryModel.Init()
+
+	case PlayerDoneMsg:
+		// Navigate back from player
+		if len(m.viewHistory) > 0 {
+			m.currentView = m.viewHistory[len(m.viewHistory)-1]
+			m.viewHistory = m.viewHistory[:len(m.viewHistory)-1]
+		}
+		// Fire progress update if authenticated
+		if m.config.AniListToken != "" && msg.AnimeID > 0 {
+			return m, updateProgressCmd(m.anilistClient, msg.AnimeID, msg.Episode)
+		}
+		return m, nil
+
+	case updateProgressMsg:
+		// Silent handler — best-effort sync
+		return m, nil
 	}
 
 	return m.propagateMsg(msg)
@@ -140,7 +211,7 @@ func (m AppModel) View() string {
 	switch m.currentView {
 	case ViewSearch:
 		content = m.searchModel.View(m.width, contentHeight)
-		status = "Search anime  |  / search  |  ? help  |  q quit"
+		status = "Search anime  |  / search  |  tab library  |  q quit"
 	case ViewDetail:
 		content = m.detailModel.View(m.width, contentHeight)
 		status = "j/k navigate  |  enter select episode  |  esc back"
@@ -150,6 +221,12 @@ func (m AppModel) View() string {
 	case ViewPlayer:
 		content = m.playerModel.View(m.width, contentHeight)
 		status = "esc back"
+	case ViewLibrary:
+		content = m.libraryModel.View(m.width, contentHeight)
+		status = "tab/shift+tab category  |  r refresh  |  enter select  |  esc back"
+	case ViewAuth:
+		content = m.authModel.View(m.width, contentHeight)
+		status = "AniList login  |  esc back"
 	default:
 		content = "Not implemented yet"
 		status = ""
@@ -195,6 +272,21 @@ func (m AppModel) propagateMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		pm, cmd := m.playerModel.Update(msg)
 		m.playerModel = pm
 		return m, cmd
+	case ViewLibrary:
+		lm, cmd := m.libraryModel.Update(msg)
+		m.libraryModel = lm
+		return m, cmd
+	case ViewAuth:
+		am, cmd := m.authModel.Update(msg)
+		m.authModel = am
+		return m, cmd
 	}
 	return m, nil
+}
+
+func updateProgressCmd(client *anilist.Client, animeID, episode int) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateProgress(context.Background(), animeID, episode, "CURRENT")
+		return updateProgressMsg{err: err}
+	}
 }

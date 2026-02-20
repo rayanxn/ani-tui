@@ -69,11 +69,12 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			return m, nil
 		}
 		m.media = msg.Media
-		m.totalEpisodes = msg.Media.Episodes
-		if m.totalEpisodes <= 0 {
-			m.totalEpisodes = 1
+		m.totalEpisodes = availableEpisodes(msg.Media)
+		if m.totalEpisodes > 0 {
+			m.selectedEpisode = 1
+		} else {
+			m.selectedEpisode = 0
 		}
-		m.selectedEpisode = 1
 		return m, nil
 
 	case spinner.TickMsg:
@@ -90,7 +91,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "j", "down":
-			if m.selectedEpisode < m.totalEpisodes {
+			if m.totalEpisodes > 0 && m.selectedEpisode < m.totalEpisodes {
 				m.selectedEpisode++
 			}
 			return m, nil
@@ -100,12 +101,19 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			}
 			return m, nil
 		case "g":
-			m.selectedEpisode = 1
+			if m.totalEpisodes > 0 {
+				m.selectedEpisode = 1
+			}
 			return m, nil
 		case "G":
-			m.selectedEpisode = m.totalEpisodes
+			if m.totalEpisodes > 0 {
+				m.selectedEpisode = m.totalEpisodes
+			}
 			return m, nil
 		case "enter":
+			if m.selectedEpisode <= 0 {
+				return m, nil
+			}
 			return m, func() tea.Msg {
 				return NavigateToTorrentsMsg{
 					AnimeID:    m.animeID,
@@ -242,7 +250,11 @@ func (m DetailModel) renderMetadata(width int) string {
 
 	if m.media.NextAiringEpisode != nil {
 		ep := m.media.NextAiringEpisode
-		lines = append(lines, labelStyle.Render("Next Episode: ")+valueStyle.Render(fmt.Sprintf("Ep %d", ep.Episode)))
+		next := fmt.Sprintf("Ep %d", ep.Episode)
+		if ep.TimeUntilAiring > 0 {
+			next += fmt.Sprintf(" in %s", formatTimeUntil(ep.TimeUntilAiring))
+		}
+		lines = append(lines, labelStyle.Render("Next Episode: ")+valueStyle.Render(next))
 	}
 
 	// Genres / Studio section
@@ -291,16 +303,20 @@ func (m DetailModel) renderEpisodeSelector(width, height int) string {
 	}
 
 	var items []string
-	for i := 1; i <= m.totalEpisodes; i++ {
-		idx := i - 1
-		if idx < m.scrollOffset || idx >= m.scrollOffset+listHeight {
-			continue
-		}
+	if m.totalEpisodes <= 0 {
+		items = append(items, dimStyle.Render("  No released episodes yet"))
+	} else {
+		for i := 1; i <= m.totalEpisodes; i++ {
+			idx := i - 1
+			if idx < m.scrollOffset || idx >= m.scrollOffset+listHeight {
+				continue
+			}
 
-		if i == m.selectedEpisode {
-			items = append(items, ui.SelectedItemStyle.Render(fmt.Sprintf("▸ Episode %d", i)))
-		} else {
-			items = append(items, dimStyle.Render(fmt.Sprintf("  Episode %d", i)))
+			if i == m.selectedEpisode {
+				items = append(items, ui.SelectedItemStyle.Render(fmt.Sprintf("▸ Episode %d", i)))
+			} else {
+				items = append(items, dimStyle.Render(fmt.Sprintf("  Episode %d", i)))
+			}
 		}
 	}
 
@@ -318,6 +334,46 @@ func fetchAnimeDetailsCmd(client *anilist.Client, id int) tea.Cmd {
 	return func() tea.Msg {
 		media, err := client.GetAnimeDetails(context.Background(), id)
 		return AnimeDetailsMsg{Media: media, Err: err}
+	}
+}
+
+// availableEpisodes returns how many episodes should be selectable for torrent search.
+// For releasing shows, limit to already-aired episodes.
+func availableEpisodes(media anilist.Media) int {
+	if media.Status == "RELEASING" && media.NextAiringEpisode != nil {
+		aired := media.NextAiringEpisode.Episode - 1
+		if aired < 0 {
+			return 0
+		}
+		return aired
+	}
+	if media.Episodes > 0 {
+		return media.Episodes
+	}
+	return 0
+}
+
+func formatTimeUntil(seconds int) string {
+	if seconds <= 0 {
+		return "soon"
+	}
+	days := seconds / 86400
+	hours := (seconds % 86400) / 3600
+	minutes := (seconds % 3600) / 60
+
+	switch {
+	case days > 0:
+		if hours > 0 {
+			return fmt.Sprintf("%dd %dh", days, hours)
+		}
+		return fmt.Sprintf("%dd", days)
+	case hours > 0:
+		if minutes > 0 {
+			return fmt.Sprintf("%dh %dm", hours, minutes)
+		}
+		return fmt.Sprintf("%dh", hours)
+	default:
+		return fmt.Sprintf("%dm", max(1, minutes))
 	}
 }
 

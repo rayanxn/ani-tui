@@ -145,7 +145,11 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 				return m, nil
 			}
 			return m, func() tea.Msg {
-				return NavigateToPlayerMsg{MagnetURI: magnetURI}
+				return NavigateToPlayerMsg{
+					MagnetURI:  magnetURI,
+					AnimeTitle: m.animeTitle,
+					Episode:    m.episode,
+				}
 			}
 		}
 

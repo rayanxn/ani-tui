@@ -152,6 +152,13 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.err != nil {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.err = nil
+				return m, nil
+			}
+		}
+
 		// List is focused
 		switch msg.String() {
 		case "/":

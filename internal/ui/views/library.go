@@ -113,6 +113,13 @@ func (m LibraryModel) Update(msg tea.Msg) (LibraryModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.err != nil {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.err = nil
+				return m, nil
+			}
+		}
+
 		// Don't handle tab keys when the list is filtering
 		if m.list.FilterState() == list.Filtering {
 			var cmd tea.Cmd

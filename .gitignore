@@ -28,3 +28,5 @@ config.json
 
 # Local project brain (assistant-managed)
 PROJECT_BRAIN.md
+
+ISSUES.md

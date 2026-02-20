@@ -135,6 +135,13 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.err != nil {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.err = nil
+				return m, nil
+			}
+		}
+
 		switch msg.String() {
 		case "enter":
 			item, ok := m.list.SelectedItem().(TorrentListItem)

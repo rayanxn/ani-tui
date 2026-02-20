@@ -52,6 +52,7 @@ func (d torrentDelegate) Render(w io.Writer, m list.Model, index int, item list.
 
 // TorrentsModel displays nyaa search results for a selected episode.
 type TorrentsModel struct {
+	animeID    int
 	animeTitle string
 	episode    int
 	quality    string
@@ -63,7 +64,7 @@ type TorrentsModel struct {
 }
 
 // NewTorrentsModel creates a torrents results view.
-func NewTorrentsModel(animeTitle string, episode int, preferredQuality string) TorrentsModel {
+func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality string) TorrentsModel {
 	base := list.NewDefaultDelegate()
 	base.Styles.SelectedTitle = base.Styles.SelectedTitle.
 		Foreground(ui.ColorPrimary).
@@ -87,6 +88,7 @@ func NewTorrentsModel(animeTitle string, episode int, preferredQuality string) T
 	query := nyaa.BuildSearchQuery(animeTitle, episode, preferredQuality)
 
 	return TorrentsModel{
+		animeID:    animeID,
 		animeTitle: animeTitle,
 		episode:    episode,
 		quality:    preferredQuality,
@@ -147,6 +149,7 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateToPlayerMsg{
 					MagnetURI:  magnetURI,
+					AnimeID:    m.animeID,
 					AnimeTitle: m.animeTitle,
 					Episode:    m.episode,
 				}

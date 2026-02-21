@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -18,7 +17,6 @@ import (
 // NyaaResultsMsg carries nyaa search results back to the torrents view.
 type NyaaResultsMsg struct {
 	Results []nyaa.Item
-	Query   string
 	Err     error
 }
 
@@ -52,20 +50,16 @@ func (d torrentDelegate) Render(w io.Writer, m list.Model, index int, item list.
 
 // TorrentsModel displays nyaa search results for a selected episode.
 type TorrentsModel struct {
-	animeID    int
-	animeTitle string
-	episode    int
-	quality    string
-	query      string
-	altTitles  []string
-	list       list.Model
-	spinner    spinner.Model
-	loading    bool
-	err        error
+	animeID int
+	request nyaa.SearchRequest
+	list    list.Model
+	spinner spinner.Model
+	loading bool
+	err     error
 }
 
 // NewTorrentsModel creates a torrents results view.
-func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality string, altTitles []string) TorrentsModel {
+func NewTorrentsModel(animeID int, req nyaa.SearchRequest) TorrentsModel {
 	base := list.NewDefaultDelegate()
 	base.Styles.SelectedTitle = base.Styles.SelectedTitle.
 		Foreground(ui.ColorPrimary).
@@ -76,7 +70,7 @@ func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality 
 	delegate := torrentDelegate{DefaultDelegate: base}
 
 	l := list.New(nil, delegate, 0, 0)
-	l.Title = fmt.Sprintf("Torrents - Episode %d", episode)
+	l.Title = fmt.Sprintf("Torrents - Episode %d", req.Episode)
 	l.SetShowHelp(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
@@ -86,25 +80,19 @@ func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality 
 	s.Spinner = spinner.Dot
 	s.Style = ui.SpinnerStyle
 
-	query := nyaa.BuildSearchQuery(animeTitle, episode, preferredQuality)
-
 	return TorrentsModel{
-		animeID:    animeID,
-		animeTitle: animeTitle,
-		episode:    episode,
-		quality:    preferredQuality,
-		query:      query,
-		altTitles:  altTitles,
-		list:       l,
-		spinner:    s,
-		loading:    true,
+		animeID: animeID,
+		request: req,
+		list:    l,
+		spinner: s,
+		loading: true,
 	}
 }
 
 func (m TorrentsModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		searchNyaaCmd(m.query),
+		searchNyaaCmd(m.request),
 	)
 }
 
@@ -121,9 +109,8 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		results := nyaa.FilterByTitle(msg.Results, m.altTitles)
-		items := make([]list.Item, len(results))
-		for i, r := range results {
+		items := make([]list.Item, len(msg.Results))
+		for i, r := range msg.Results {
 			items[i] = TorrentListItem{item: r}
 		}
 		m.list.SetItems(items)
@@ -160,8 +147,8 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 				return NavigateToPlayerMsg{
 					MagnetURI:  magnetURI,
 					AnimeID:    m.animeID,
-					AnimeTitle: m.animeTitle,
-					Episode:    m.episode,
+					AnimeTitle: m.request.PrimaryTitle,
+					Episode:    m.request.Episode,
 				}
 			}
 		}
@@ -178,9 +165,10 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 
 // View renders the torrents results view.
 func (m TorrentsModel) View(width, height int) string {
+	queryLabel := nyaa.BuildSearchQuery(m.request.PrimaryTitle, m.request.Episode, m.request.Quality)
 	header := lipgloss.NewStyle().Padding(1, 2).Render(
 		ui.TitleStyle.Render("Episode Search") + "\n" +
-			lipgloss.NewStyle().Foreground(ui.ColorSubtle).Render(strings.TrimSpace(m.query)),
+			lipgloss.NewStyle().Foreground(ui.ColorSubtle).Render(queryLabel),
 	)
 
 	listHeight := height - lipgloss.Height(header)
@@ -205,9 +193,9 @@ func (m TorrentsModel) View(width, height int) string {
 	return lipgloss.NewStyle().Width(width).Height(height).Render(content)
 }
 
-func searchNyaaCmd(query string) tea.Cmd {
+func searchNyaaCmd(req nyaa.SearchRequest) tea.Cmd {
 	return func() tea.Msg {
-		results, err := nyaa.Search(context.Background(), query)
-		return NyaaResultsMsg{Results: results, Query: query, Err: err}
+		results, err := nyaa.SearchWithFallback(context.Background(), req)
+		return NyaaResultsMsg{Results: results, Err: err}
 	}
 }

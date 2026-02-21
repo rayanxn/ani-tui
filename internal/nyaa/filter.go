@@ -73,8 +73,20 @@ func tokenize(s string) []string {
 	return tokens
 }
 
+// isDigitOnly returns true if s consists entirely of digit characters.
+func isDigitOnly(s string) bool {
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 // scoreTitleMatch scores how well a torrent title matches the given alt titles.
 // Returns a normalized score; higher is better.
+// Extra tokens in the core that don't appear in the alt title are penalized,
+// which naturally rejects season mismatches (e.g. "Oshi no Ko" vs "Oshi no Ko 2nd Season").
 func scoreTitleMatch(torrentTitle string, altTitles []string) float64 {
 	groupTags, core, _ := parseTitleZones(torrentTitle)
 	coreTokens := tokenize(core)
@@ -110,17 +122,37 @@ func scoreTitleMatch(torrentTitle string, altTitles []string) float64 {
 		}
 
 		norm := raw / float64(len(altTokens))
+
+		// Extra-token penalty: for multi-token alt titles, penalize core tokens
+		// not present in the alt set and alt tokens not present in the core.
+		// This rejects season mismatches without explicit season detection.
+		// The len >= 2 guard protects single-token titles like "86" or "K".
+		if len(altTokens) >= 2 {
+			altSet := make(map[string]bool, len(altTokens))
+			for _, at := range altTokens {
+				altSet[at] = true
+			}
+
+			// Count non-digit core tokens not in alt set.
+			for _, ct := range coreTokens {
+				if !isDigitOnly(ct) && !altSet[ct] {
+					norm -= 3.0 / float64(len(altTokens))
+				}
+			}
+
+			// Count alt tokens not in core set.
+			for _, at := range altTokens {
+				if !coreSet[at] {
+					norm -= 3.0 / float64(len(altTokens))
+				}
+			}
+		}
+
 		if norm > bestScore || bestCount == 0 {
 			bestScore = norm
 			bestCount = len(altTokens)
 		}
 	}
-
-	// For single-token titles, require a strong match (the token must appear
-	// in the core). The threshold of 1.5 alone handles this since a single
-	// matched token gives 3.0/1 = 3.0, and a miss gives 0.0.
-	// However, for truly short queries we also check that the token is a
-	// standalone token in the core (tokenize already ensures word boundaries).
 
 	return bestScore
 }

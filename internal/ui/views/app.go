@@ -10,6 +10,7 @@ import (
 
 	"github.com/rayanxn/ani-tui/internal/anilist"
 	"github.com/rayanxn/ani-tui/internal/config"
+	"github.com/rayanxn/ani-tui/internal/nyaa"
 	"github.com/rayanxn/ani-tui/internal/ui"
 )
 
@@ -29,10 +30,8 @@ const (
 type (
 	NavigateToDetailMsg   struct{ AnimeID int }
 	NavigateToTorrentsMsg struct {
-		AnimeID    int
-		AnimeTitle string
-		Episode    int
-		AltTitles  []string
+		AnimeID int
+		Request nyaa.SearchRequest
 	}
 	NavigateToPlayerMsg struct {
 		MagnetURI  string
@@ -166,7 +165,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NavigateToTorrentsMsg:
 		m = m.pushView(ViewTorrents)
-		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.AnimeID, msg.Episode, m.config.PreferredQuality, msg.AltTitles)
+		req := msg.Request
+		req.Quality = m.config.PreferredQuality
+		m.torrentsModel = NewTorrentsModel(msg.AnimeID, req)
 		return m, m.torrentsModel.Init()
 
 	case NavigateToPlayerMsg:

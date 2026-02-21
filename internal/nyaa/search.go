@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const defaultFeedURL = "https://nyaa.si/"
@@ -98,6 +99,96 @@ func (c *Client) Search(ctx context.Context, query string) ([]Item, error) {
 	})
 
 	return items, nil
+}
+
+// SearchRequest bundles all parameters needed for a torrent search.
+type SearchRequest struct {
+	PrimaryTitle string
+	AltTitles    []string
+	Episode      int
+	Quality      string
+}
+
+// SearchWithFallback searches the primary title first, filters results, and
+// lazily tries non-CJK alt titles if the filtered count is below minResults.
+// Results are deduplicated by InfoHash and re-sorted.
+func (c *Client) SearchWithFallback(ctx context.Context, req SearchRequest) ([]Item, error) {
+	const minResults = 3
+
+	primaryQuery := BuildSearchQuery(req.PrimaryTitle, req.Episode, req.Quality)
+	items, err := c.Search(ctx, primaryQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := FilterByTitle(items, req.AltTitles)
+	if len(filtered) >= minResults {
+		return filtered, nil
+	}
+
+	// Collect already-seen info hashes from primary results.
+	seen := make(map[string]bool)
+	for _, it := range items {
+		if it.InfoHash != "" {
+			seen[it.InfoHash] = true
+		}
+	}
+
+	// Try each non-CJK alt title that produces a different query.
+	for _, alt := range req.AltTitles {
+		if IsLikelyCJK(alt) {
+			continue
+		}
+		q := BuildSearchQuery(alt, req.Episode, req.Quality)
+		if q == primaryQuery {
+			continue
+		}
+
+		extra, searchErr := c.Search(ctx, q)
+		if searchErr != nil {
+			continue
+		}
+		for _, it := range extra {
+			if it.InfoHash != "" && seen[it.InfoHash] {
+				continue
+			}
+			if it.InfoHash != "" {
+				seen[it.InfoHash] = true
+			}
+			items = append(items, it)
+		}
+
+		filtered = FilterByTitle(items, req.AltTitles)
+		if len(filtered) >= minResults {
+			break
+		}
+	}
+
+	// Re-filter and re-sort the merged set.
+	filtered = FilterByTitle(items, req.AltTitles)
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].Seeders == filtered[j].Seeders {
+			return filtered[i].Downloads > filtered[j].Downloads
+		}
+		return filtered[i].Seeders > filtered[j].Seeders
+	})
+	return filtered, nil
+}
+
+// SearchWithFallback uses the default client.
+func SearchWithFallback(ctx context.Context, req SearchRequest) ([]Item, error) {
+	return defaultClient.SearchWithFallback(ctx, req)
+}
+
+// IsLikelyCJK returns true if the string contains CJK (Han, Katakana, Hiragana) characters.
+// Used to skip native Japanese/Chinese titles from Nyaa search queries.
+func IsLikelyCJK(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hiragana, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildSearchQuery builds a nyaa query like: "Title 02 1080p".

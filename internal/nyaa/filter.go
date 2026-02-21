@@ -136,14 +136,14 @@ func scoreTitleMatch(torrentTitle string, altTitles []string) float64 {
 			// Count non-digit core tokens not in alt set.
 			for _, ct := range coreTokens {
 				if !isDigitOnly(ct) && !altSet[ct] {
-					norm -= 1.0
+					norm -= 3.0 / float64(len(altTokens))
 				}
 			}
 
 			// Count alt tokens not in core set.
 			for _, at := range altTokens {
 				if !coreSet[at] {
-					norm -= 1.0
+					norm -= 3.0 / float64(len(altTokens))
 				}
 			}
 		}

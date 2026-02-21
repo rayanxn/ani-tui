@@ -157,6 +157,11 @@ func (c *Client) SearchWithFallback(ctx context.Context, req SearchRequest) ([]I
 			}
 			items = append(items, it)
 		}
+
+		filtered = FilterByTitle(items, req.AltTitles)
+		if len(filtered) >= minResults {
+			break
+		}
 	}
 
 	// Re-filter and re-sort the merged set.

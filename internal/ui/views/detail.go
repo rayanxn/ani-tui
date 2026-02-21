@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rayanxn/ani-tui/internal/anilist"
+	"github.com/rayanxn/ani-tui/internal/nyaa"
 	"github.com/rayanxn/ani-tui/internal/ui"
 )
 
@@ -117,10 +118,12 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			altTitles := collectTitles(m.media.Title)
 			return m, func() tea.Msg {
 				return NavigateToTorrentsMsg{
-					AnimeID:    m.animeID,
-					AnimeTitle: m.media.Title.DisplayTitle(),
-					Episode:    m.selectedEpisode,
-					AltTitles:  altTitles,
+					AnimeID: m.animeID,
+					Request: nyaa.SearchRequest{
+						PrimaryTitle: m.media.Title.DisplayTitle(),
+						AltTitles:    altTitles,
+						Episode:      m.selectedEpisode,
+					},
 				}
 			}
 		}
@@ -439,7 +442,9 @@ func formatSource(s string) string {
 	return strings.Join(parts, " ")
 }
 
-// collectTitles returns all non-empty title variants for filtering.
+// collectTitles returns non-empty Latin title variants for filtering.
+// Native (CJK) titles are excluded because the Latin tokenizer splits them
+// into individual characters, causing spurious matches.
 func collectTitles(t anilist.Title) []string {
 	var titles []string
 	if t.English != "" {

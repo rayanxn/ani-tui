@@ -209,6 +209,24 @@ func TestFilterByTitle(t *testing.T) {
 				"[GroupA] Shingeki no Kyojin - 05 (720p)",
 			},
 		},
+		{
+			name:      "extra tokens penalize season mismatch",
+			altTitles: []string{"Oshi no Ko"},
+			items: []Item{
+				{Title: "[SubsPlease] Oshi no Ko - 01 (1080p) [hash]", Seeders: 100},
+				{Title: "[SubsPlease] Oshi no Ko 2nd Season - 01 (1080p) [hash]", Seeders: 200},
+			},
+			wantTitles: []string{"[SubsPlease] Oshi no Ko - 01 (1080p) [hash]"},
+		},
+		{
+			name:      "season title matches own season torrent",
+			altTitles: []string{"Oshi no Ko 2nd Season"},
+			items: []Item{
+				{Title: "[SubsPlease] Oshi no Ko 2nd Season - 01 (1080p) [hash]", Seeders: 200},
+				{Title: "[SubsPlease] Oshi no Ko - 01 (1080p) [hash]", Seeders: 100},
+			},
+			wantTitles: []string{"[SubsPlease] Oshi no Ko 2nd Season - 01 (1080p) [hash]"},
+		},
 	}
 
 	for _, tt := range tests {

@@ -121,11 +121,13 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			if m.selectedEpisode <= 0 {
 				return m, nil
 			}
+			altTitles := collectTitles(m.media.Title)
 			return m, func() tea.Msg {
 				return NavigateToTorrentsMsg{
 					AnimeID:    m.animeID,
 					AnimeTitle: m.media.Title.DisplayTitle(),
 					Episode:    m.selectedEpisode,
+					AltTitles:  altTitles,
 				}
 			}
 		}
@@ -442,6 +444,18 @@ func formatSource(s string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// collectTitles returns all non-empty title variants for filtering.
+func collectTitles(t anilist.Title) []string {
+	var titles []string
+	if t.English != "" {
+		titles = append(titles, t.English)
+	}
+	if t.Romaji != "" {
+		titles = append(titles, t.Romaji)
+	}
+	return titles
 }
 
 // wordWrap wraps text to the given width at word boundaries.

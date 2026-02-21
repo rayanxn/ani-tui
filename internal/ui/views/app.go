@@ -32,6 +32,7 @@ type (
 		AnimeID    int
 		AnimeTitle string
 		Episode    int
+		AltTitles  []string
 	}
 	NavigateToPlayerMsg struct {
 		MagnetURI  string
@@ -165,7 +166,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NavigateToTorrentsMsg:
 		m = m.pushView(ViewTorrents)
-		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.AnimeID, msg.Episode, m.config.PreferredQuality)
+		m.torrentsModel = NewTorrentsModel(msg.AnimeTitle, msg.AnimeID, msg.Episode, m.config.PreferredQuality, msg.AltTitles)
 		return m, m.torrentsModel.Init()
 
 	case NavigateToPlayerMsg:

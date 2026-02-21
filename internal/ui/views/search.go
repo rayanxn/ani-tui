@@ -141,10 +141,11 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 				return m, nil
 			case "esc":
 				if m.input.Value() != "" {
-					m.focused = false
-					m.input.Blur()
+					m.input.SetValue("")
 					return m, nil
 				}
+				m.focused = false
+				m.input.Blur()
 				return m, nil
 			}
 			var cmd tea.Cmd
@@ -154,6 +155,15 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 
 		// List is focused
 		switch msg.String() {
+		case "esc":
+			if len(m.list.Items()) > 0 {
+				m.list.SetItems(nil)
+				m.input.SetValue("")
+				m.focused = true
+				m.input.Focus()
+				return m, textinput.Blink
+			}
+			return m, func() tea.Msg { return NavigateBackMsg{} }
 		case "/":
 			m.focused = true
 			m.input.Focus()

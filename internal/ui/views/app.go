@@ -100,10 +100,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			if m.currentView == ViewSearch {
-				if m.searchModel.inputFocused() {
-					return m.propagateMsg(msg)
-				}
-				return m, tea.Quit
+				return m.propagateMsg(msg)
 			}
 			if m.currentView == ViewLibrary && m.libraryModel.list.FilterState() == list.Filtering {
 				return m.propagateMsg(msg)

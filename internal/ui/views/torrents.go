@@ -57,6 +57,7 @@ type TorrentsModel struct {
 	episode    int
 	quality    string
 	query      string
+	altTitles  []string
 	list       list.Model
 	spinner    spinner.Model
 	loading    bool
@@ -64,7 +65,7 @@ type TorrentsModel struct {
 }
 
 // NewTorrentsModel creates a torrents results view.
-func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality string) TorrentsModel {
+func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality string, altTitles []string) TorrentsModel {
 	base := list.NewDefaultDelegate()
 	base.Styles.SelectedTitle = base.Styles.SelectedTitle.
 		Foreground(ui.ColorPrimary).
@@ -93,6 +94,7 @@ func NewTorrentsModel(animeTitle string, animeID, episode int, preferredQuality 
 		episode:    episode,
 		quality:    preferredQuality,
 		query:      query,
+		altTitles:  altTitles,
 		list:       l,
 		spinner:    s,
 		loading:    true,
@@ -119,8 +121,9 @@ func (m TorrentsModel) Update(msg tea.Msg) (TorrentsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		items := make([]list.Item, len(msg.Results))
-		for i, r := range msg.Results {
+		results := nyaa.FilterByTitle(msg.Results, m.altTitles)
+		items := make([]list.Item, len(results))
+		for i, r := range results {
 			items[i] = TorrentListItem{item: r}
 		}
 		m.list.SetItems(items)
